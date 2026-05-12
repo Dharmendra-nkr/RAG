@@ -203,12 +203,8 @@ def main() -> None:
         if args.countdown > 0:
             prompt = f"Get ready. Recording starts in {args.countdown} seconds."
             print(prompt, flush=True)
-            if args.tts:
-                speak_text(prompt, args.tts_voice_id, args.tts_model_id, args.tts_output_format)
             for remaining in range(args.countdown, 0, -1):
                 print(f"Starting in {remaining}...", flush=True)
-                if args.tts:
-                    speak_text(f"Starting in {remaining}", args.tts_voice_id, args.tts_model_id, args.tts_output_format)
                 time.sleep(1)
             print("Recording now. Speak your question.", flush=True)
             if args.tts:
@@ -223,8 +219,6 @@ def main() -> None:
 
     try:
         print("Transcribing...")
-        if args.tts:
-            speak_text("Transcribing.", args.tts_voice_id, args.tts_model_id, args.tts_output_format)
         transcript = stt.transcribe_audio(audio_path, model_size=args.model, device=args.device)
         print("Transcript:")
         print(transcript or "(no speech detected)")

@@ -1,6 +1,14 @@
-# Minimal RAG Pipeline
+# RAG Voice Agent
 
-This project loads documents, chunks them, embeds the chunks, stores them in Pinecone, retrieves the most similar chunks for a query, and asks an LLM to answer from that context.
+This project combines retrieval-augmented generation with a voice interface. It records speech, transcribes it with STT, retrieves relevant context from Pinecone, answers with the LLM, and can speak the final response back through ElevenLabs TTS.
+
+## What It Does
+
+- STT records your microphone input and transcribes it to text.
+- RAG retrieves the most relevant chunks from your indexed documents.
+- LLM generates an answer from the retrieved context.
+- TTS turns the final answer into a voiceover using ElevenLabs.
+- Console output stays visible so you can follow recording, transcription, retrieval, and answer generation step by step.
 
 ## Setup
 
@@ -18,9 +26,10 @@ This project loads documents, chunks them, embeds the chunks, stores them in Pin
    PINECONE_REGION=us-east-1
    GROQ_CHAT_MODEL=llama-3.3-70b-versatile
    EMBEDDING_MODEL_NAME=all-MiniLM-L6-v2
+   ELEVENLABS_API_KEY=your_elevenlabs_key
    ```
 
-## Use
+## Usage
 
 Index documents:
 
@@ -34,7 +43,7 @@ Ask a question:
 python rag_pipeline.py query "What does the policy say about refunds?"
 ```
 
-Run the voice agent:
+Run the voice agent with microphone capture:
 
 ```bash
 python voice_agent.py --duration 5 --countdown 3
@@ -46,13 +55,13 @@ If you launch through `conda run`, use `--no-capture-output` so the countdown an
 conda run --no-capture-output -n rag python -u voice_agent.py --duration 5 --countdown 3
 ```
 
-To hear the prompts and answer out loud, add `--tts`:
+To speak the final answer with ElevenLabs voiceover, add `--tts`:
 
 ```bash
 python voice_agent.py --duration 5 --countdown 3 --tts
 ```
 
-The app will use your ElevenLabs key from `ELEVENLABS_API_KEY` or `ELEVEN_LABS_API_KEY`, and it defaults to the public `JBFqnCBsd6RMkjVDRZzb` voice unless you override it with `--tts-voice-id`.
+The app reads your ElevenLabs key from `ELEVENLABS_API_KEY` or `ELEVEN_LABS_API_KEY` and defaults to the public `JBFqnCBsd6RMkjVDRZzb` voice unless you override it with `--tts-voice-id`.
 
 You can also choose a different ElevenLabs model or output format:
 
@@ -68,6 +77,19 @@ python voice_agent.py --duration 5 --countdown 3 --input-device 1
 ```
 
 Use a microphone input for your voice. Use `Stereo Mix` only if you want to capture system audio coming from your speakers.
+
+## Output Flow
+
+When you run the voice agent, the output is intended to feel like this:
+
+1. Countdown appears in the terminal only.
+2. ElevenLabs speaks: `Recording now. Speak your question.`
+3. Recording starts and stops after the configured duration.
+4. Transcription appears in the terminal.
+5. The RAG answer is printed.
+6. ElevenLabs speaks the final answer as a voiceover.
+
+If no speech is detected, the app prints a clear message and stops before querying RAG.
 
 For debugging, you can print the retrieved chunks before the answer:
 
