@@ -34,6 +34,41 @@ Ask a question:
 python rag_pipeline.py query "What does the policy say about refunds?"
 ```
 
+Run the voice agent:
+
+```bash
+python voice_agent.py --duration 5 --countdown 3
+```
+
+If you launch through `conda run`, use `--no-capture-output` so the countdown and recording logs appear live:
+
+```bash
+conda run --no-capture-output -n rag python -u voice_agent.py --duration 5 --countdown 3
+```
+
+To hear the prompts and answer out loud, add `--tts`:
+
+```bash
+python voice_agent.py --duration 5 --countdown 3 --tts
+```
+
+The app will use your ElevenLabs key from `ELEVENLABS_API_KEY` or `ELEVEN_LABS_API_KEY`, and it defaults to the public `JBFqnCBsd6RMkjVDRZzb` voice unless you override it with `--tts-voice-id`.
+
+You can also choose a different ElevenLabs model or output format:
+
+```bash
+python voice_agent.py --duration 5 --countdown 3 --tts --tts-model-id eleven_flash_v2_5 --tts-output-format mp3_44100_128
+```
+
+If the wrong audio source is selected, list devices and choose a real input device:
+
+```bash
+python voice_agent.py --list-devices
+python voice_agent.py --duration 5 --countdown 3 --input-device 1
+```
+
+Use a microphone input for your voice. Use `Stereo Mix` only if you want to capture system audio coming from your speakers.
+
 For debugging, you can print the retrieved chunks before the answer:
 
 ```bash

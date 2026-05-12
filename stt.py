@@ -8,6 +8,8 @@ This module keeps dependencies minimal: `faster-whisper`, `sounddevice`, `scipy`
 """
 from __future__ import annotations
 
+import contextlib
+import os
 import tempfile
 from pathlib import Path
 from typing import Optional
@@ -20,7 +22,38 @@ from scipy import signal
 _WHISPER_MODELS: dict[str, object] = {}
 
 
-def record_audio(output_path: str | Path = "recording.wav", duration: float = 5.0, sample_rate: int = 16000) -> str:
+def _resolve_input_device(input_device: int | None = None) -> int:
+    """Return a PortAudio input device index with at least one input channel."""
+    devices = sd.query_devices()
+
+    if input_device is not None:
+        device = devices[input_device]
+        if device["max_input_channels"] < 1:
+            raise RuntimeError(
+                f"Selected device {input_device} ({device['name']}) has no input channels. "
+                "Pick a microphone device instead."
+            )
+        return input_device
+
+    default_input = sd.default.device[0]
+    if default_input is not None:
+        device = devices[default_input]
+        if device["max_input_channels"] >= 1:
+            return int(default_input)
+
+    for index, device in enumerate(devices):
+        if device["max_input_channels"] >= 1:
+            return index
+
+    raise RuntimeError("No input-capable audio devices were found.")
+
+
+def record_audio(
+    output_path: str | Path = "recording.wav",
+    duration: float = 5.0,
+    sample_rate: int = 16000,
+    input_device: int | None = None,
+) -> str:
     """Record `duration` seconds from the default input device and save as WAV.
 
     Returns the path to the written WAV file.
@@ -28,13 +61,27 @@ def record_audio(output_path: str | Path = "recording.wav", duration: float = 5.
     output_path = str(output_path)
     try:
         frames = int(duration * sample_rate)
+        device_index = _resolve_input_device(input_device)
+        device = sd.query_devices(device_index)
         print(f"Recording {duration}s ({frames} frames) at {sample_rate} Hz...")
-        recording = sd.rec(frames, samplerate=sample_rate, channels=1, dtype="int16")
-        sd.wait()
+        print(f"Using input device {device_index}: {device['name']} ({device['max_input_channels']} input channels)")
+        recording = sd.rec(
+            frames,
+            samplerate=sample_rate,
+            channels=1,
+            dtype="int16",
+            blocking=True,
+            device=device_index,
+        )
         wavfile.write(output_path, sample_rate, recording)
+        peak = int(np.max(np.abs(recording))) if recording.size else 0
+        rms = float(np.sqrt(np.mean(np.square(recording.astype(np.float32))))) if recording.size else 0.0
         print(f"Saved recording to {output_path}")
+        print(f"Audio level: peak={peak} rms={rms:.1f}")
         return output_path
     except Exception as exc:
+        if isinstance(exc, RuntimeError):
+            raise
         raise RuntimeError(f"Recording failed: {exc}") from exc
 
 
@@ -44,6 +91,9 @@ def _normalize_wav(input_path: str, target_rate: int = 16000) -> str:
     If no change is needed, returns the original path.
     """
     sr, data = wavfile.read(input_path)
+    if data.size == 0:
+        return input_path
+
     if data.ndim > 1:
         data = data.mean(axis=1)
 
@@ -51,17 +101,19 @@ def _normalize_wav(input_path: str, target_rate: int = 16000) -> str:
         num_samples = round(len(data) * float(target_rate) / sr)
         data = signal.resample(data, num_samples)
 
-    # convert to int16
     if data.dtype != np.int16:
-        # scale floats in -1..1 to int16
         if np.issubdtype(data.dtype, np.floating):
-            max_val = np.max(np.abs(data)) or 1.0
-            data = (data / max_val) * 32767
-        data = data.astype(np.int16)
+            max_val = float(np.max(np.abs(data))) or 1.0
+            data = np.clip(data / max_val, -1.0, 1.0) * 32767
+        data = np.clip(data, -32768, 32767).astype(np.int16)
 
-    tmp = Path(tempfile.mkstemp(suffix=".wav")[1])
-    wavfile.write(tmp, target_rate, data)
-    return str(tmp)
+    if sr == target_rate and data.ndim == 1 and data.dtype == np.int16:
+        return input_path
+
+    tmp_file = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+    tmp_file.close()
+    wavfile.write(tmp_file.name, target_rate, data)
+    return tmp_file.name
 
 
 def transcribe_audio(path: str, model_size: str = "small", device: str = "cpu", language: Optional[str] = None) -> str:
@@ -84,6 +136,22 @@ def transcribe_audio(path: str, model_size: str = "small", device: str = "cpu", 
         model = WhisperModel(model_size, device=device, compute_type=compute_type)
         _WHISPER_MODELS[key] = model
 
-    segments, _ = model.transcribe(norm_path, language=language) if language else model.transcribe(norm_path)
+    segments, _ = model.transcribe(
+        norm_path,
+        language=language,
+        vad_filter=True,
+        beam_size=5,
+        temperature=0.0,
+    ) if language else model.transcribe(
+        norm_path,
+        vad_filter=True,
+        beam_size=5,
+        temperature=0.0,
+    )
     text = " ".join((segment.text or "").strip() for segment in segments).strip()
+
+    if norm_path != path:
+        with contextlib.suppress(OSError):
+            os.remove(norm_path)
+
     return text.strip()
